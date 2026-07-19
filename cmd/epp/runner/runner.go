@@ -119,6 +119,7 @@ import (
 	endpointattributefilter "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/filter/endpointattribute"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/filter/prefixcacheaffinity"
 	sessionaffinityfilter "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/filter/sessionaffinity"
+	sessioncontrolfilter "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/filter/sessioncontrol"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/filter/sloheadroomtier"
 	topologyaffinityfilter "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/filter/topologyaffinity"
 	utilizationfilter "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/filter/utilization"
@@ -144,6 +145,7 @@ import (
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/scorer/queuedepth"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/scorer/runningrequests"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/scorer/sessionaffinity"
+	sessioncontrolscorer "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/scorer/sessioncontrol"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/scorer/tokenload"
 	topologyaffinityscorer "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/scorer/topologyaffinity"
 	testfilter "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/scheduling/test/filter"
@@ -587,6 +589,7 @@ func (r *Runner) registerInTreePlugins() {
 	fwkplugin.Register(bylabel.PrefillRoleType, fwkplugin.StabilityBeta, bylabel.PrefillRoleFactory)
 	// Alpha
 	fwkplugin.Register(sessionaffinityfilter.SessionAffinityType, fwkplugin.StabilityAlpha, sessionaffinityfilter.Factory)
+	fwkplugin.Register(sessioncontrolfilter.SessionControlFilterType, fwkplugin.StabilityAlpha, sessioncontrolfilter.Factory)
 	fwkplugin.Register(endpointattributefilter.EndpointAttributeFilterType, fwkplugin.StabilityAlpha, endpointattributefilter.EndpointAttributeFilterFactory)
 	fwkplugin.Register(topologyaffinityfilter.FilterType, fwkplugin.StabilityAlpha, topologyaffinityfilter.Factory)
 	fwkplugin.Register(utilizationfilter.UtilizationFilterType, fwkplugin.StabilityAlpha, utilizationfilter.Factory)
@@ -601,6 +604,7 @@ func (r *Runner) registerInTreePlugins() {
 	fwkplugin.Register(contextlengthaware.ContextLengthAwareType, fwkplugin.StabilityBeta, contextlengthaware.Factory)
 	// Alpha
 	fwkplugin.Register(sessionaffinity.SessionAffinityType, fwkplugin.StabilityAlpha, sessionaffinity.Factory)
+	fwkplugin.Register(sessioncontrolscorer.SessionControlScorerType, fwkplugin.StabilityAlpha, sessioncontrolscorer.Factory)
 	fwkplugin.Register(headerlabelaffinity.PluginType, fwkplugin.StabilityAlpha, headerlabelaffinity.Factory)
 
 	// data layer models source/extractor
