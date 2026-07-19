@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	fwkplugin "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/plugin"
+	fwkrh "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/requesthandling"
 	fwksched "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/scheduling"
 	attrsession "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/datalayer/attribute/session"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/requestcontrol/dataproducer/sessionid"
@@ -42,7 +43,8 @@ func mustFactory(t *testing.T, params string) *sessionid.Producer {
 func TestFactory_Validation(t *testing.T) {
 	t.Parallel()
 
-	const validationErr = "requires exactly one of headerName or cookieName"
+	const noSourceErr = "requires at least one of headerName, cookieName or bodyField"
+	const exclusiveErr = "accepts at most one of headerName and cookieName"
 
 	tests := []struct {
 		name      string
@@ -52,14 +54,18 @@ func TestFactory_Validation(t *testing.T) {
 	}{
 		{name: "header only", params: json.RawMessage(`{"headerName":"x-session-id"}`)},
 		{name: "cookie only", params: json.RawMessage(`{"cookieName":"llm-d-session"}`)},
+		{name: "body only", params: json.RawMessage(`{"bodyField":"session_id"}`)},
+		{name: "body and header", params: json.RawMessage(`{"bodyField":"session_id","headerName":"x-session-id"}`)},
+		{name: "body and cookie", params: json.RawMessage(`{"bodyField":"session_id","cookieName":"llm-d-session"}`)},
 		{name: "header normalized", params: json.RawMessage(`{"headerName":" X-Session-ID "}`)},
-		{name: "empty object", params: json.RawMessage(`{}`), wantErr: true, errSubstr: validationErr},
-		{name: "both set", params: json.RawMessage(`{"headerName":"x","cookieName":"y"}`), wantErr: true, errSubstr: validationErr},
-		{name: "empty strings", params: json.RawMessage(`{"headerName":"","cookieName":""}`), wantErr: true, errSubstr: validationErr},
+		{name: "empty object", params: json.RawMessage(`{}`), wantErr: true, errSubstr: noSourceErr},
+		{name: "header and cookie", params: json.RawMessage(`{"headerName":"x","cookieName":"y"}`), wantErr: true, errSubstr: exclusiveErr},
+		{name: "all three set", params: json.RawMessage(`{"headerName":"x","cookieName":"y","bodyField":"z"}`), wantErr: true, errSubstr: exclusiveErr},
+		{name: "empty strings", params: json.RawMessage(`{"headerName":"","cookieName":"","bodyField":""}`), wantErr: true, errSubstr: noSourceErr},
 		{name: "invalid json", params: json.RawMessage(`not-json`), wantErr: true, errSubstr: "failed to parse"},
 		{name: "unknown field", params: json.RawMessage(`{"headerName":"x","other":"y"}`), wantErr: true, errSubstr: "failed to parse"},
-		{name: "nil raw message", params: nil, wantErr: true, errSubstr: validationErr},
-		{name: "zero-length raw message", params: json.RawMessage{}, wantErr: true, errSubstr: validationErr},
+		{name: "nil raw message", params: nil, wantErr: true, errSubstr: noSourceErr},
+		{name: "zero-length raw message", params: json.RawMessage{}, wantErr: true, errSubstr: noSourceErr},
 	}
 
 	for _, tc := range tests {
@@ -178,6 +184,120 @@ func TestProduce_CookieMode(t *testing.T) {
 			req := &fwksched.InferenceRequest{
 				Headers: map[string]string{"cookie": tc.cookie},
 			}
+
+			err := producer.Produce(context.Background(), req, nil)
+			require.NoError(t, err)
+
+			got, ok := attrsession.ReadSessionID(req)
+			if tc.want == "" {
+				assert.False(t, ok)
+				return
+			}
+			assert.True(t, ok)
+			assert.Equal(t, tc.want, string(got))
+		})
+	}
+}
+
+func TestProduce_BodyMode(t *testing.T) {
+	t.Parallel()
+
+	producer := mustFactory(t, `{"bodyField":"session_id"}`)
+
+	tests := []struct {
+		name string
+		body *fwkrh.InferenceRequestBody
+		want string
+	}{
+		{
+			name: "field present",
+			body: &fwkrh.InferenceRequestBody{Payload: fwkrh.PayloadMap{"session_id": "subagent-42"}},
+			want: "subagent-42",
+		},
+		{
+			name: "value trimmed",
+			body: &fwkrh.InferenceRequestBody{Payload: fwkrh.PayloadMap{"session_id": "  subagent-42  "}},
+			want: "subagent-42",
+		},
+		{
+			name: "field absent",
+			body: &fwkrh.InferenceRequestBody{Payload: fwkrh.PayloadMap{"other": "irrelevant"}},
+		},
+		{
+			name: "field not a string",
+			body: &fwkrh.InferenceRequestBody{Payload: fwkrh.PayloadMap{"session_id": float64(42)}},
+		},
+		{
+			name: "raw payload",
+			body: &fwkrh.InferenceRequestBody{Payload: fwkrh.RawPayload(`{"session_id":"subagent-42"}`)},
+		},
+		{
+			name: "nil payload",
+			body: &fwkrh.InferenceRequestBody{},
+		},
+		{
+			name: "nil body",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			req := &fwksched.InferenceRequest{Body: tc.body}
+
+			err := producer.Produce(context.Background(), req, nil)
+			require.NoError(t, err)
+
+			got, ok := attrsession.ReadSessionID(req)
+			if tc.want == "" {
+				assert.False(t, ok, "no session id should be published")
+				return
+			}
+			assert.True(t, ok)
+			assert.Equal(t, tc.want, string(got))
+		})
+	}
+}
+
+func TestProduce_BodyPrecedenceOverHeader(t *testing.T) {
+	t.Parallel()
+
+	producer := mustFactory(t, `{"bodyField":"session_id","headerName":"x-session-id"}`)
+
+	tests := []struct {
+		name    string
+		body    *fwkrh.InferenceRequestBody
+		headers map[string]string
+		want    string
+	}{
+		{
+			name:    "body wins over header",
+			body:    &fwkrh.InferenceRequestBody{Payload: fwkrh.PayloadMap{"session_id": "from-body"}},
+			headers: map[string]string{"x-session-id": "from-header"},
+			want:    "from-body",
+		},
+		{
+			name:    "header fallback when body field absent",
+			body:    &fwkrh.InferenceRequestBody{Payload: fwkrh.PayloadMap{"other": "x"}},
+			headers: map[string]string{"x-session-id": "from-header"},
+			want:    "from-header",
+		},
+		{
+			name:    "header fallback when payload unparsed",
+			body:    &fwkrh.InferenceRequestBody{Payload: fwkrh.RawPayload(`{"session_id":"from-body"}`)},
+			headers: map[string]string{"x-session-id": "from-header"},
+			want:    "from-header",
+		},
+		{
+			name: "neither present",
+			body: &fwkrh.InferenceRequestBody{Payload: fwkrh.PayloadMap{}},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			req := &fwksched.InferenceRequest{Body: tc.body, Headers: tc.headers}
 
 			err := producer.Produce(context.Background(), req, nil)
 			require.NoError(t, err)
