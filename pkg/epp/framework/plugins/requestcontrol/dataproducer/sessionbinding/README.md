@@ -8,6 +8,15 @@ The tracker consumes the `SessionID` attribute and declares it as a required dep
 
 Bindings are in-memory and EPP-local. A router restart loses them; with a radix-native session backend (SGLang `--enable-session-radix-cache`) the next turn of each session re-pins at the cost of one re-prefill.
 
+## Session close
+
+A request whose path ends in `/close_session` (made schedulable by the [sglang-session-parser](../../../requesthandling/parsers/sglangsession/sglangsession.go)) is treated as a client-initiated session close:
+
+- With a binding: the affinity plugins pin the close to the bound endpoint like any turn; the tracker then removes the binding. The binding is removed regardless of the backend result — with a radix-native backend a failed close only defers KV reclamation to cache eviction.
+- Without a binding (router restarted, binding idled out, unknown ID): the tracker broadcasts the close best-effort, fire-and-forget, to every known endpoint except the one the request was scheduled to (which receives it via the proxy). A close for an unknown session is a backend no-op, so the broadcast is safe and preserves deterministic KV reclamation across router restarts.
+
+The gateway `HTTPRoute` must route `/close_session` to the InferencePool for closes to reach the router at all.
+
 ## Parameters
 
 | Name | Type | Default | Description |

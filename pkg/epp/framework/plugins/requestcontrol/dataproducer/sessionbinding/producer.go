@@ -20,7 +20,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/http"
 	"sort"
+	"sync"
 	"time"
 
 	k8stypes "k8s.io/apimachinery/pkg/types"
@@ -68,11 +71,17 @@ var (
 
 // Tracker owns the session binding table: it publishes the SessionBinding
 // attribute for scheduling plugins, records bindings after the picker
-// selects an endpoint, and drops bindings when endpoints leave the pool.
+// selects an endpoint, removes bindings on client-initiated session close,
+// and drops bindings when endpoints leave the pool.
 type Tracker struct {
 	typedName fwkplugin.TypedName
 	bindingDK fwkplugin.DataKey
 	table     *Table
+
+	parentCtx  context.Context
+	httpClient *http.Client
+	addrMu     sync.RWMutex
+	addresses  map[k8stypes.NamespacedName]string
 }
 
 // Factory builds a Tracker from raw plugin parameters.
@@ -106,8 +115,11 @@ func Factory(name string, rawParameters *json.Decoder, handle fwkplugin.Handle) 
 
 	typedName := fwkplugin.TypedName{Type: SessionBindingTrackerType, Name: name}
 	tracker := &Tracker{
-		typedName: typedName,
-		bindingDK: attrsession.SessionBindingDataKey.WithNonEmptyProducerName(name),
+		typedName:  typedName,
+		bindingDK:  attrsession.SessionBindingDataKey.WithNonEmptyProducerName(name),
+		parentCtx:  handle.Context(),
+		httpClient: &http.Client{Timeout: closeRequestTimeout},
+		addresses:  make(map[k8stypes.NamespacedName]string),
 	}
 	tracker.table = NewTable(TableConfig{
 		TTL:         ttl,
@@ -168,6 +180,10 @@ func (t *Tracker) PreRequest(ctx context.Context, request *fwksched.InferenceReq
 	if request == nil || result == nil {
 		return
 	}
+	if isCloseRequest(request) {
+		t.handleClose(ctx, request, result)
+		return
+	}
 	sessionID, ok := attrsession.ReadSessionID(request)
 	if !ok {
 		return
@@ -202,18 +218,34 @@ func (t *Tracker) RegisterDependencies(r datalayer.Registrar) error {
 	})
 }
 
-// Extract drops all bindings for an endpoint when it leaves the pool. The
-// next turn of an affected session schedules fresh and rebinds.
+// Extract tracks endpoint addresses for best-effort close broadcasts and
+// drops all bindings for an endpoint when it leaves the pool; the next turn
+// of an affected session schedules fresh and rebinds.
 func (t *Tracker) Extract(ctx context.Context, event datalayer.EndpointEvent) error {
-	if event.Type != datalayer.EventDelete || event.Endpoint == nil || event.Endpoint.GetMetadata() == nil {
+	if event.Endpoint == nil || event.Endpoint.GetMetadata() == nil {
 		return nil
 	}
-	endpoint := event.Endpoint.GetMetadata().NamespacedName
-	removed := t.table.RemoveEndpoint(endpoint, ReasonPodDelete)
-	if removed > 0 {
-		recordBindings(t.typedName.Name, t.typedName.Type, t.table.Len())
-		log.FromContext(ctx).V(logutil.DEFAULT).Info("Dropped session bindings for deleted endpoint",
-			"endpoint", endpoint.String(), "bindings", removed)
+	metadata := event.Endpoint.GetMetadata()
+	endpoint := metadata.NamespacedName
+
+	switch event.Type {
+	case datalayer.EventAddOrUpdate:
+		if metadata.Address != "" && metadata.Port != "" {
+			t.addrMu.Lock()
+			t.addresses[endpoint] = "http://" + net.JoinHostPort(metadata.Address, metadata.Port)
+			t.addrMu.Unlock()
+		}
+	case datalayer.EventDelete:
+		t.addrMu.Lock()
+		delete(t.addresses, endpoint)
+		t.addrMu.Unlock()
+
+		removed := t.table.RemoveEndpoint(endpoint, ReasonPodDelete)
+		if removed > 0 {
+			recordBindings(t.typedName.Name, t.typedName.Type, t.table.Len())
+			log.FromContext(ctx).V(logutil.DEFAULT).Info("Dropped session bindings for deleted endpoint",
+				"endpoint", endpoint.String(), "bindings", removed)
+		}
 	}
 	return nil
 }

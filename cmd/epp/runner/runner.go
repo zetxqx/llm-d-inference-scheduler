@@ -112,6 +112,7 @@ import (
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/requesthandling/parsers/openai"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/requesthandling/parsers/passthrough"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/requesthandling/parsers/sglanghttp"
+	"github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/requesthandling/parsers/sglangsession"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/requesthandling/parsers/vertexai"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/requesthandling/parsers/vllmgrpc"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/requesthandling/parsers/vllmhttp"
@@ -723,6 +724,8 @@ func (r *Runner) registerInTreePlugins() {
 	fwkplugin.Register(vllmhttp.VllmHTTPParserType, fwkplugin.StabilityBeta, vllmhttp.VllmHTTPParserPluginFactory)
 	fwkplugin.Register(sglanghttp.SGLangHTTPParserType, fwkplugin.StabilityBeta, sglanghttp.SGLangHTTPParserPluginFactory)
 	fwkplugin.Register(vertexai.VertexAIParserType, fwkplugin.StabilityBeta, vertexai.VertexAIParserPluginFactory)
+	// Alpha
+	fwkplugin.Register(sglangsession.SGLangSessionParserType, fwkplugin.StabilityAlpha, sglangsession.Factory)
 
 	// register saturation detector plugins
 	// Beta

@@ -54,6 +54,15 @@ var (
 		},
 		[]string{"plugin_name", "plugin_type"},
 	)
+
+	sessionCloseBroadcasts = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Subsystem: eppmetrics.LLMDRouterEndpointPickerSubsystem,
+			Name:      "session_control_close_broadcasts_total",
+			Help:      metricsutil.HelpMsgWithStability("Session closes broadcast to all endpoints because no binding was found.", compbasemetrics.ALPHA),
+		},
+		[]string{"plugin_name", "plugin_type"},
+	)
 )
 
 func registerMetrics(registerer prometheus.Registerer) error {
@@ -64,6 +73,7 @@ func registerMetrics(registerer prometheus.Registerer) error {
 		sessionBindings,
 		sessionInvalidations,
 		sessionBindRejections,
+		sessionCloseBroadcasts,
 	} {
 		if err := registerer.Register(collector); err != nil {
 			var alreadyRegistered prometheus.AlreadyRegisteredError
@@ -86,4 +96,8 @@ func recordInvalidation(pluginName, pluginType string, reason Reason) {
 
 func recordBindRejection(pluginName, pluginType string) {
 	sessionBindRejections.WithLabelValues(pluginName, pluginType).Inc()
+}
+
+func recordCloseBroadcast(pluginName, pluginType string) {
+	sessionCloseBroadcasts.WithLabelValues(pluginName, pluginType).Inc()
 }
