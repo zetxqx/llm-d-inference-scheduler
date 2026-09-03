@@ -39,7 +39,7 @@ import (
 func closeRequest(sessionID string) *fwksched.InferenceRequest {
 	req := &fwksched.InferenceRequest{Headers: map[string]string{":path": "/close_session"}}
 	if sessionID != "" {
-		key := attrsession.SessionIDDataKey.WithNonEmptyProducerName(sessionidconstants.SessionIDProducerType).String()
+		key := attrsession.SessionIDDataKey.WithNonEmptyProducerName(sessionidconstants.SessionIDProducerType)
 		req.PutAttribute(key, attrsession.SessionID(sessionID))
 	}
 	return req
@@ -68,7 +68,7 @@ func endpointEventFor(t *testing.T, name k8stypes.NamespacedName, serverURL stri
 	t.Helper()
 	host, port, err := net.SplitHostPort(serverURL[len("http://"):])
 	require.NoError(t, err)
-	ep := fwkdl.NewEndpoint(&fwkdl.EndpointMetadata{NamespacedName: name, Address: host, Port: port}, &fwkdl.Metrics{})
+	ep := fwkdl.NewEndpoint(&fwkdl.EndpointMetadata{ID: name, Address: host, Port: port}, &fwkdl.Metrics{})
 	return fwkdl.EndpointEvent{Type: fwkdl.EventAddOrUpdate, Endpoint: ep}
 }
 

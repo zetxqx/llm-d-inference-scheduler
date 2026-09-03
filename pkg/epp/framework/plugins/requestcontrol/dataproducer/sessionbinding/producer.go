@@ -153,7 +153,7 @@ func (t *Tracker) Produce(_ context.Context, request *fwksched.InferenceRequest,
 	if !ok {
 		return nil
 	}
-	request.PutAttribute(t.bindingDK.String(), attrsession.SessionBinding{Endpoint: endpoint})
+	request.PutAttribute(t.bindingDK, attrsession.SessionBinding{Endpoint: endpoint})
 	return nil
 }
 
@@ -176,34 +176,35 @@ func (t *Tracker) Consumes() fwkplugin.DataDependencies {
 // PreRequest records or refreshes the binding after the picker selects an
 // endpoint. A first turn creates the binding; later turns refresh it; a turn
 // landing on a different endpoint moves it.
-func (t *Tracker) PreRequest(ctx context.Context, request *fwksched.InferenceRequest, result *fwksched.SchedulingResult) {
+func (t *Tracker) PreRequest(ctx context.Context, request *fwksched.InferenceRequest, result *fwksched.SchedulingResult) error {
 	if request == nil || result == nil {
-		return
+		return nil
 	}
 	if isCloseRequest(request) {
 		t.handleClose(ctx, request, result)
-		return
+		return nil
 	}
 	sessionID, ok := attrsession.ReadSessionID(request)
 	if !ok {
-		return
+		return nil
 	}
 	profileResult := result.ProfileResults[result.PrimaryProfileName]
 	if profileResult == nil || len(profileResult.TargetEndpoints) == 0 {
-		return
+		return nil
 	}
 	metadata := profileResult.TargetEndpoints[0].GetMetadata()
 	if metadata == nil {
-		return
+		return nil
 	}
 
-	if !t.table.Bind(string(sessionID), metadata.NamespacedName) {
+	if !t.table.Bind(string(sessionID), metadata.ID) {
 		recordBindRejection(t.typedName.Name, t.typedName.Type)
 		log.FromContext(ctx).V(logutil.DEFAULT).Info("Session binding table full; session left unbound",
-			"sessionID", string(sessionID), "endpoint", metadata.NamespacedName.String())
-		return
+			"sessionID", string(sessionID), "endpoint", metadata.ID.String())
+		return nil
 	}
 	recordBindings(t.typedName.Name, t.typedName.Type, t.table.Len())
+	return nil
 }
 
 // RegisterDependencies declares that this plugin needs an
@@ -226,7 +227,7 @@ func (t *Tracker) Extract(ctx context.Context, event datalayer.EndpointEvent) er
 		return nil
 	}
 	metadata := event.Endpoint.GetMetadata()
-	endpoint := metadata.NamespacedName
+	endpoint := metadata.ID
 
 	switch event.Type {
 	case datalayer.EventAddOrUpdate:

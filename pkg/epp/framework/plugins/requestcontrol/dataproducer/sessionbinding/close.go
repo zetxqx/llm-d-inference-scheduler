@@ -73,7 +73,7 @@ func scheduledEndpoint(result *fwksched.SchedulingResult) k8stypes.NamespacedNam
 	if profileResult == nil || len(profileResult.TargetEndpoints) == 0 || profileResult.TargetEndpoints[0].GetMetadata() == nil {
 		return k8stypes.NamespacedName{}
 	}
-	return profileResult.TargetEndpoints[0].GetMetadata().NamespacedName
+	return profileResult.TargetEndpoints[0].GetMetadata().ID
 }
 
 // broadcastClose fires a best-effort close at every known endpoint except

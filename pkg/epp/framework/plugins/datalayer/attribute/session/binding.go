@@ -39,6 +39,6 @@ type SessionBinding struct {
 // absent. Absence means the session is unbound (first turn, or no session);
 // schedulers must treat it as "no placement constraint".
 func ReadSessionBinding(r *fwksched.InferenceRequest) (SessionBinding, bool) {
-	key := SessionBindingDataKey.WithNonEmptyProducerName(sessionbindingconstants.SessionBindingTrackerType).String()
+	key := SessionBindingDataKey.WithNonEmptyProducerName(sessionbindingconstants.SessionBindingTrackerType)
 	return fwksched.ReadRequestAttribute[SessionBinding](r, key)
 }

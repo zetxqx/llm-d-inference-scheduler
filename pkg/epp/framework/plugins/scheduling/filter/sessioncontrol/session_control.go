@@ -78,7 +78,7 @@ func (s *SessionControl) Filter(_ context.Context, request *scheduling.Inference
 		return endpoints
 	}
 	for _, endpoint := range endpoints {
-		if endpoint.GetMetadata() != nil && endpoint.GetMetadata().NamespacedName == binding.Endpoint {
+		if endpoint.GetMetadata() != nil && endpoint.GetMetadata().ID == binding.Endpoint {
 			return []scheduling.Endpoint{endpoint}
 		}
 	}

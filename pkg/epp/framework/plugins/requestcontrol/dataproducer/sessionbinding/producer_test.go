@@ -47,14 +47,14 @@ func mustTracker(t *testing.T, params string) *sessionbinding.Tracker {
 func requestWithSession(sessionID string) *fwksched.InferenceRequest {
 	req := &fwksched.InferenceRequest{}
 	if sessionID != "" {
-		key := attrsession.SessionIDDataKey.WithNonEmptyProducerName(sessionidconstants.SessionIDProducerType).String()
+		key := attrsession.SessionIDDataKey.WithNonEmptyProducerName(sessionidconstants.SessionIDProducerType)
 		req.PutAttribute(key, attrsession.SessionID(sessionID))
 	}
 	return req
 }
 
 func schedulingResultFor(endpoint k8stypes.NamespacedName) *fwksched.SchedulingResult {
-	ep := fwksched.NewEndpoint(&fwkdl.EndpointMetadata{NamespacedName: endpoint}, &fwkdl.Metrics{}, nil)
+	ep := fwksched.NewEndpoint(&fwkdl.EndpointMetadata{ID: endpoint}, &fwkdl.Metrics{}, nil)
 	return &fwksched.SchedulingResult{
 		PrimaryProfileName: "default",
 		ProfileResults: map[string]*fwksched.ProfileRunResult{
@@ -173,7 +173,7 @@ func TestExtract_EventDeleteDropsBindings(t *testing.T) {
 	tracker.PreRequest(ctx, requestWithSession("s2"), schedulingResultFor(podA))
 	tracker.PreRequest(ctx, requestWithSession("s3"), schedulingResultFor(podB))
 
-	deleted := fwkdl.NewEndpoint(&fwkdl.EndpointMetadata{NamespacedName: podA}, &fwkdl.Metrics{})
+	deleted := fwkdl.NewEndpoint(&fwkdl.EndpointMetadata{ID: podA}, &fwkdl.Metrics{})
 	require.NoError(t, tracker.Extract(ctx, fwkdl.EndpointEvent{Type: fwkdl.EventDelete, Endpoint: deleted}))
 
 	assert.Equal(t, 0, tracker.ActiveSessions(podA))

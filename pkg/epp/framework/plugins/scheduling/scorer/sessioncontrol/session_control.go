@@ -87,7 +87,7 @@ func (s *SessionControl) Score(_ context.Context, request *scheduling.InferenceR
 		return scores
 	}
 	for _, endpoint := range endpoints {
-		if endpoint.GetMetadata() != nil && endpoint.GetMetadata().NamespacedName == binding.Endpoint {
+		if endpoint.GetMetadata() != nil && endpoint.GetMetadata().ID == binding.Endpoint {
 			scores[endpoint] = 1.0
 			break
 		}

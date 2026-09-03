@@ -36,12 +36,12 @@ var (
 )
 
 func endpointFor(name k8stypes.NamespacedName) scheduling.Endpoint {
-	return scheduling.NewEndpoint(&fwkdl.EndpointMetadata{NamespacedName: name}, &fwkdl.Metrics{}, nil)
+	return scheduling.NewEndpoint(&fwkdl.EndpointMetadata{ID: name}, &fwkdl.Metrics{}, nil)
 }
 
 func requestBoundTo(endpoint k8stypes.NamespacedName) *scheduling.InferenceRequest {
 	req := &scheduling.InferenceRequest{}
-	key := attrsession.SessionBindingDataKey.WithNonEmptyProducerName(sessionbindingconstants.SessionBindingTrackerType).String()
+	key := attrsession.SessionBindingDataKey.WithNonEmptyProducerName(sessionbindingconstants.SessionBindingTrackerType)
 	req.PutAttribute(key, attrsession.SessionBinding{Endpoint: endpoint})
 	return req
 }
