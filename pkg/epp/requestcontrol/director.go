@@ -682,13 +682,17 @@ func (d *Director) runDataProducerPlugins(ctx context.Context,
 		return nil
 	}
 	// Each producer runs under its own timeout so a slow one does not extend the
-	// budget of the others.
+	// budget of the others. A failing producer does not stop the rest: producers
+	// are independent, and consumers already tolerate an absent attribute (e.g. a
+	// tokenizer that cannot handle a session-lifecycle body must not prevent the
+	// session-id producer from running).
+	var errs []error
 	for _, p := range plugins {
 		if err := dataProducerPluginsWithTimeout(ctx, producerTimeout(p), []fwkrc.DataProducer{p}, request, endpoints); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 func (d *Director) runScreeners(ctx context.Context,
