@@ -15,10 +15,11 @@ limitations under the License.
 */
 
 // Package sessionid provides a DataProducer that extracts a session
-// identifier from a configured request header or named cookie and publishes
-// it as a SessionID attribute on the InferenceRequest attribute store, so
-// that affinity-aware scorers and filters can read it without knowing how
-// the session was carried on the wire.
+// identifier from a configured request header, named cookie, or top-level
+// request body field and publishes it as a SessionID attribute on the
+// InferenceRequest attribute store, so that affinity-aware scorers and
+// filters can read it without knowing how the session was carried on the
+// wire.
 package sessionid
 
 import (
@@ -29,6 +30,7 @@ import (
 
 	fwkplugin "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/plugin"
 	"github.com/llm-d/llm-d-router/pkg/epp/framework/interface/requestcontrol"
+	fwkrh "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/requesthandling"
 	fwksched "github.com/llm-d/llm-d-router/pkg/epp/framework/interface/scheduling"
 	attrsession "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/datalayer/attribute/session"
 	sessionidconstants "github.com/llm-d/llm-d-router/pkg/epp/framework/plugins/requestcontrol/dataproducer/sessionid/constants"
@@ -43,13 +45,21 @@ const cookieHeader = "cookie"
 
 // Parameters configures the session-id producer.
 //
-// Exactly one of HeaderName or CookieName must be set:
+// At least one source must be set; HeaderName and CookieName are mutually
+// exclusive:
+//   - BodyField: read the named top-level string field from the parsed JSON
+//     request body. Bodies not parsed into a map (raw or protobuf payloads)
+//     yield no identifier from this source.
 //   - HeaderName: read the value of the named request header verbatim.
 //   - CookieName: parse the standard "cookie" request header and read the
 //     value of the named cookie.
+//
+// When BodyField is combined with a header or cookie source, the body value
+// takes precedence and the header or cookie serves as the fallback.
 type Parameters struct {
 	HeaderName string `json:"headerName"`
 	CookieName string `json:"cookieName"`
+	BodyField  string `json:"bodyField"`
 }
 
 var _ requestcontrol.DataProducer = &Producer{}
@@ -61,6 +71,7 @@ type Producer struct {
 	dk         fwkplugin.DataKey
 	headerName string
 	cookieName string
+	bodyField  string
 }
 
 // Factory builds a Producer from raw plugin parameters.
@@ -74,12 +85,13 @@ func Factory(name string, rawParameters *json.Decoder, _ fwkplugin.Handle) (fwkp
 
 	header := strings.ToLower(strings.TrimSpace(params.HeaderName))
 	cookie := strings.TrimSpace(params.CookieName)
+	bodyField := strings.TrimSpace(params.BodyField)
 
 	switch {
-	case header == "" && cookie == "":
-		return nil, fmt.Errorf("'%s' requires exactly one of headerName or cookieName to be set", SessionIDProducerType)
+	case header == "" && cookie == "" && bodyField == "":
+		return nil, fmt.Errorf("'%s' requires at least one of headerName, cookieName or bodyField to be set", SessionIDProducerType)
 	case header != "" && cookie != "":
-		return nil, fmt.Errorf("'%s' requires exactly one of headerName or cookieName to be set, not both", SessionIDProducerType)
+		return nil, fmt.Errorf("'%s' accepts at most one of headerName and cookieName", SessionIDProducerType)
 	}
 
 	return &Producer{
@@ -87,6 +99,7 @@ func Factory(name string, rawParameters *json.Decoder, _ fwkplugin.Handle) (fwkp
 		dk:         attrsession.SessionIDDataKey.WithNonEmptyProducerName(name),
 		headerName: header,
 		cookieName: cookie,
+		bodyField:  bodyField,
 	}, nil
 }
 
@@ -117,13 +130,39 @@ func (p *Producer) Produce(_ context.Context, request *fwksched.InferenceRequest
 }
 
 func (p *Producer) extract(request *fwksched.InferenceRequest) string {
-	if request == nil || request.Headers == nil {
+	if request == nil {
+		return ""
+	}
+	if p.bodyField != "" {
+		if id := bodyFieldValue(request.Body, p.bodyField); id != "" {
+			return id
+		}
+	}
+	if request.Headers == nil {
 		return ""
 	}
 	if p.headerName != "" {
 		return strings.TrimSpace(request.Headers[p.headerName])
 	}
-	return strings.TrimSpace(cookieValue(request.Headers[cookieHeader], p.cookieName))
+	if p.cookieName != "" {
+		return strings.TrimSpace(cookieValue(request.Headers[cookieHeader], p.cookieName))
+	}
+	return ""
+}
+
+// bodyFieldValue returns the string value of the named top-level field in
+// the parsed request payload, or the empty string when the body is absent,
+// was not parsed into a map, or the field is missing or not a string.
+func bodyFieldValue(body *fwkrh.InferenceRequestBody, field string) string {
+	if body == nil || body.Payload == nil {
+		return ""
+	}
+	m, ok := body.Payload.AsMap()
+	if !ok {
+		return ""
+	}
+	value, _ := m[field].(string)
+	return strings.TrimSpace(value)
 }
 
 // cookieValue returns the value of the named cookie within an HTTP Cookie
